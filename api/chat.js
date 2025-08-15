@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 // Configuration for the local GPT-OSS-20B API
-const GPT_OSS_API_URL = (process.env.GPT_OSS_API_URL || '').replace(/^@/, '');
+const GPT_OSS_API_URL = (process.env.GPT_OSS_API_URL || 'http://localhost:1234/v1/chat/completions').replace(/^@/, '');
 const API_KEY = process.env.GPT_OSS_API_KEY;
 
 export default async function handler(req, res) {
@@ -46,14 +46,14 @@ export default async function handler(req, res) {
 
         console.log('Forwarding request to:', GPT_OSS_API_URL);
 
-        // Prepare request to local GPT-OSS-20B API
+        // Prepare request to local GPT-OSS-20B API (LM Studio compatible format)
         const gptRequest = {
-            model: 'gpt-oss-20b',
             messages: [
                 { role: 'system', content: 'You are a helpful AI assistant.' },
                 { role: 'user', content: message }
             ],
-            stream: true  // Enable streaming responses
+            stream: true,
+            max_tokens: 1000
         };
 
         // Prepare headers for the request
@@ -82,12 +82,23 @@ export default async function handler(req, res) {
         // Stream the response back to the client
         response.data.on('data', (chunk) => {
             try {
-                const parsedChunk = JSON.parse(chunk.toString());
-                if (parsedChunk.choices && parsedChunk.choices[0].delta.content) {
-                    res.write(parsedChunk.choices[0].delta.content);
-                }
-            } catch (parseError) {
-                console.error('Error parsing chunk:', parseError);
+                const chunkStr = chunk.toString();
+                const lines = chunkStr.split('\n');
+                
+                lines.forEach(line => {
+                    if (line.startsWith('data: ')) {
+                        try {
+                            const parsedChunk = JSON.parse(line.slice(6));
+                            if (parsedChunk.choices && parsedChunk.choices[0].delta && parsedChunk.choices[0].delta.content) {
+                                res.write(parsedChunk.choices[0].delta.content);
+                            }
+                        } catch (parseError) {
+                            console.error('Error parsing chunk:', parseError);
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error('Error processing chunk:', error);
             }
         });
 
