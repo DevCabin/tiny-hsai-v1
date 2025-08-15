@@ -19,8 +19,5 @@
             "src": "/",
             "dest": "frontend/index.html"
         }
-    ],
-    "env": {
-        "GPT_OSS_API_URL": "@gpt_oss_api_url"
-    }
+    ]
 }
