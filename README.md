@@ -6,13 +6,14 @@ This project provides a web-based chat interface for interacting with a local GP
 ## Prerequisites
 - Node.js (v18 or later)
 - Vercel CLI
+- GitHub account
 - Local GPT-OSS-20B API running at `api.devcabin.com`
 
 ## Setup
 
 ### 1. Clone the Repository
 ```bash
-git clone https://github.com/yourusername/gpt-oss-chat-wrapper.git
+git clone https://github.com/DevCabin/gpt-oss-chat-wrapper.git
 cd gpt-oss-chat-wrapper
 ```
 
@@ -40,7 +41,14 @@ npm start
 
 ### 5. Deployment to Vercel
 ```bash
-npm run deploy
+# Install Vercel CLI globally
+npm install -g vercel
+
+# Login to Vercel
+vercel login
+
+# Deploy
+vercel
 ```
 
 ## Configuration
@@ -62,6 +70,13 @@ npm run deploy
 - Use HTTPS for all API communications
 - Keep API keys confidential if used
 - Implement rate limiting on your local API
+
+## Contributing
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
 
 ## License
 [Your License Here]
