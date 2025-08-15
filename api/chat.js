@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 // Configuration for the local GPT-OSS-20B API
-const GPT_OSS_API_URL = process.env.GPT_OSS_API_URL || 'https://api.devcabin.com/v1/chat/completions';
+const GPT_OSS_API_URL = (process.env.GPT_OSS_API_URL || '').replace(/^@/, '');
 const API_KEY = process.env.GPT_OSS_API_KEY;
 
 export default async function handler(req, res) {
@@ -26,6 +26,15 @@ export default async function handler(req, res) {
         return;
     }
 
+    // Validate API URL
+    if (!GPT_OSS_API_URL) {
+        console.error('GPT_OSS_API_URL is not set');
+        return res.status(500).json({ 
+            error: 'API Configuration Error', 
+            details: 'GPT_OSS_API_URL environment variable is not configured' 
+        });
+    }
+
     try {
         // Extract user message from request
         const { message } = req.body;
@@ -34,6 +43,8 @@ export default async function handler(req, res) {
             res.status(400).json({ error: 'No message provided' });
             return;
         }
+
+        console.log('Forwarding request to:', GPT_OSS_API_URL);
 
         // Prepare request to local GPT-OSS-20B API
         const gptRequest = {
@@ -90,18 +101,21 @@ export default async function handler(req, res) {
         // More detailed error handling
         if (error.response) {
             // The request was made and the server responded with a status code
+            console.error('Response error details:', error.response.data);
             res.status(error.response.status).json({
                 error: 'External API error',
                 details: error.response.data
             });
         } else if (error.request) {
             // The request was made but no response was received
+            console.error('No response received:', error.request);
             res.status(503).json({
                 error: 'No response from GPT-OSS API',
                 details: 'The API might be down or unreachable'
             });
         } else {
             // Something happened in setting up the request
+            console.error('Request setup error:', error.message);
             res.status(500).json({
                 error: 'Internal server error',
                 details: error.message
