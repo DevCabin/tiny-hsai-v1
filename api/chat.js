@@ -1,10 +1,18 @@
 import axios from 'axios';
 
 export default async function handler(req, res) {
-    // Catch-all error handler
+    // Global error logging function
+    const logError = (message, details = {}) => {
+        console.error(JSON.stringify({
+            timestamp: new Date().toISOString(),
+            message,
+            ...details
+        }));
+    };
+
     try {
-        // Detailed request logging
-        console.log('Full request object:', {
+        // Extensive request logging
+        logError('Incoming Request', {
             method: req.method,
             body: req.body,
             headers: req.headers
@@ -31,6 +39,7 @@ export default async function handler(req, res) {
         // Potential API base URLs to try
         const POTENTIAL_URLS = [
             process.env.API_BASE_URL,  // User-defined URL
+            'https://c83e2baa5243.ngrok-free.app',  // Explicit ngrok URL
             'http://localhost:1234',   // Default LM Studio
             'http://127.0.0.1:1234',   // Alternate localhost
             'http://host.docker.internal:1234'  // Docker host networking
@@ -53,22 +62,57 @@ export default async function handler(req, res) {
             stream: false  // Non-streaming for reliability
         };
 
-        console.log('Prepared AI Request:', JSON.stringify(aiRequest));
-        console.log('Attempting URLs:', POTENTIAL_URLS);
+        logError('Prepared AI Request', { request: aiRequest });
+        logError('Attempting URLs', { urls: POTENTIAL_URLS });
 
         // Try each potential URL
         let lastError = null;
         for (const baseURL of POTENTIAL_URLS) {
             try {
-                console.log(`Trying URL: ${baseURL}`);
+                logError(`Trying URL: ${baseURL}`);
 
-                // Custom axios instance with interceptors
+                // Custom axios instance with extreme error handling
                 const instance = axios.create({
                     baseURL,
-                    timeout: 10000,  // Reduced timeout for faster failover
+                    timeout: 15000,  // Increased timeout
+                    transformResponse: [function (data) {
+                        // Log raw response data
+                        logError('Raw Response Data', { 
+                            dataType: typeof data,
+                            dataLength: data ? data.length : 'N/A',
+                            dataStart: data ? data.substring(0, 200) : 'N/A'
+                        });
+
+                        // Attempt to parse with extensive error handling
+                        if (typeof data === 'string') {
+                            try {
+                                return JSON.parse(data);
+                            } catch (parseError) {
+                                logError('JSON Parsing Error', {
+                                    originalData: data,
+                                    parseErrorMessage: parseError.message
+                                });
+                                
+                                // If parsing fails, try to clean or modify the data
+                                const cleanedData = data.trim()
+                                    .replace(/^[^{[]*/, '')  // Remove any leading non-JSON characters
+                                    .replace(/[^}\]]*$/, '');  // Remove any trailing non-JSON characters
+                                
+                                try {
+                                    return JSON.parse(cleanedData);
+                                } catch (secondParseError) {
+                                    logError('Cleaned Data Parsing Error', {
+                                        cleanedData,
+                                        parseErrorMessage: secondParseError.message
+                                    });
+                                    throw parseError;
+                                }
+                            }
+                        }
+                        return data;
+                    }],
                     headers: { 
                         'Content-Type': 'application/json',
-                        // Add ngrok-specific headers to bypass warning
                         'ngrok-skip-browser-warning': '1',
                         'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36'
                     }
@@ -77,14 +121,22 @@ export default async function handler(req, res) {
                 // Send request to local AI server
                 const response = await instance.post('/v1/chat/completions', aiRequest);
 
+                logError('Response Received', { 
+                    status: response.status, 
+                    data: JSON.stringify(response.data).substring(0, 500) 
+                });
+
                 // Validate response structure
                 if (!response.data) {
-                    console.error('No data in response from', baseURL);
+                    logError('No data in response', { baseURL });
                     continue;
                 }
 
                 if (!response.data.choices || !response.data.choices[0]) {
-                    console.error('Invalid response structure from', baseURL);
+                    logError('Invalid response structure', { 
+                        baseURL, 
+                        responseData: JSON.stringify(response.data) 
+                    });
                     continue;
                 }
 
@@ -95,7 +147,11 @@ export default async function handler(req, res) {
 
                 return;  // Successfully sent response, exit function
             } catch (error) {
-                console.error(`Error with URL ${baseURL}:`, error.message);
+                logError(`Error with URL ${baseURL}`, {
+                    errorMessage: error.message,
+                    errorStack: error.stack,
+                    errorResponse: error.response ? JSON.stringify(error.response.data) : 'No response'
+                });
                 lastError = error;
             }
         }
@@ -105,7 +161,10 @@ export default async function handler(req, res) {
 
     } catch (error) {
         // Comprehensive error logging
-        console.error('Unhandled Error:', error);
+        logError('Unhandled Error', {
+            errorMessage: error.message,
+            errorStack: error.stack
+        });
 
         // Attempt to extract meaningful error information
         let errorDetails = 'Unknown error occurred';
@@ -113,8 +172,10 @@ export default async function handler(req, res) {
 
         if (error.response) {
             // Server responded with an error
-            console.error('Response Error Data:', error.response.data);
-            console.error('Response Error Status:', error.response.status);
+            logError('Response Error', {
+                errorData: error.response.data,
+                errorStatus: error.response.status
+            });
             
             // Try to parse error response
             try {
@@ -138,7 +199,7 @@ export default async function handler(req, res) {
         res.status(statusCode).json({
             error: 'API Communication Error',
             details: errorDetails,
-            potentialUrls: process.env.API_BASE_URL ? [process.env.API_BASE_URL] : []
+            potentialUrls: POTENTIAL_URLS
         });
     }
 }
