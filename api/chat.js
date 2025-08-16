@@ -66,7 +66,12 @@ export default async function handler(req, res) {
                 const instance = axios.create({
                     baseURL,
                     timeout: 10000,  // Reduced timeout for faster failover
-                    headers: { 'Content-Type': 'application/json' }
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        // Add ngrok-specific headers to bypass warning
+                        'ngrok-skip-browser-warning': '1',
+                        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36'
+                    }
                 });
 
                 // Send request to local AI server
