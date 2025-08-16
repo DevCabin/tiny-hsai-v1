@@ -28,19 +28,21 @@ export default async function handler(req, res) {
             return;
         }
 
-        // Prepare request to local AI API
+        // Prepare request to local AI API via Cloudflare tunnel
         const aiRequest = {
             messages: [
                 { role: 'system', content: 'You are a helpful AI assistant.' },
                 { role: 'user', content: message }
             ],
-            stream: false  // Simplified to non-streaming for reliability
+            stream: false  // Non-streaming for reliability
         };
 
-        // Send request to local AI server
-        const response = await axios.post('http://localhost:1234/v1/chat/completions', aiRequest, {
-            headers: { 'Content-Type': 'application/json' },
-            timeout: 10000  // 10-second timeout
+        // Send request to Cloudflare-exposed AI server
+        const response = await axios.post('https://api.devcabin.com/v1/chat/completions', aiRequest, {
+            headers: { 
+                'Content-Type': 'application/json'
+            },
+            timeout: 30000  // 30-second timeout to account for potential network latency
         });
 
         // Return the AI's response
@@ -62,7 +64,7 @@ export default async function handler(req, res) {
             // The request was made but no response was received
             res.status(503).json({
                 error: 'No response from AI server',
-                details: 'The local AI server might be down or unreachable'
+                details: 'The AI server might be down or unreachable'
             });
         } else {
             // Something happened in setting up the request
