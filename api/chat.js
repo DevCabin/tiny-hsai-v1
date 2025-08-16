@@ -40,15 +40,25 @@ export default async function handler(req, res) {
         console.log('Sending request to API with payload:', JSON.stringify(aiRequest));
 
         // Send request to Cloudflare-exposed AI server
-        const response = await axios.post('https://api.devcabin.com/v1/chat/completions', aiRequest, {
+        const response = await axios({
+            method: 'post',
+            url: 'https://api.devcabin.com/v1/chat/completions',
+            data: aiRequest,
             headers: { 
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
             },
-            timeout: 30000,  // 30-second timeout
+            timeout: 30000,
             transformResponse: [function (data) {
-                // Log raw response for debugging
-                console.log('Raw API response:', data);
-                return data;
+                // Attempt to parse the response, with fallback
+                try {
+                    console.log('Raw API response:', data);
+                    return typeof data === 'string' ? JSON.parse(data) : data;
+                } catch (error) {
+                    console.error('Parsing error:', error);
+                    console.error('Unparseable response:', data);
+                    throw new Error(`Unable to parse response: ${data}`);
+                }
             }]
         });
 
@@ -57,7 +67,7 @@ export default async function handler(req, res) {
 
         // Validate response structure
         if (!response.data || !response.data.choices || !response.data.choices[0]) {
-            throw new Error('Unexpected API response format');
+            throw new Error('Unexpected API response format: ' + JSON.stringify(response.data));
         }
 
         // Return the AI's response
@@ -73,6 +83,7 @@ export default async function handler(req, res) {
         if (error.response) {
             console.error('Response error data:', error.response.data);
             console.error('Response error status:', error.response.status);
+            console.error('Response error headers:', error.response.headers);
         }
 
         // Detailed error response
@@ -80,7 +91,11 @@ export default async function handler(req, res) {
             // The request was made and the server responded with a status code
             res.status(error.response.status).json({
                 error: 'AI API Error',
-                details: error.response.data ? JSON.stringify(error.response.data) : 'Unknown error'
+                details: error.response.data ? 
+                    (typeof error.response.data === 'object' 
+                        ? JSON.stringify(error.response.data) 
+                        : error.response.data.toString()) 
+                    : 'Unknown error'
             });
         } else if (error.request) {
             // The request was made but no response was received
