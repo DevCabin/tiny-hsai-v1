@@ -37,37 +37,17 @@ export default async function handler(req, res) {
             stream: false  // Non-streaming for reliability
         };
 
-        console.log('Sending request to API with payload:', JSON.stringify(aiRequest));
-
         // Send request to Cloudflare-exposed AI server
-        const response = await axios({
-            method: 'post',
-            url: 'https://api.devcabin.com/v1/chat/completions',
-            data: aiRequest,
+        const response = await axios.post('https://api.devcabin.com/v1/chat/completions', aiRequest, {
             headers: { 
-                'Content-Type': 'application/json',
-                'Accept': 'application/json'
+                'Content-Type': 'application/json'
             },
-            timeout: 30000,
-            transformResponse: [function (data) {
-                // Attempt to parse the response, with fallback
-                try {
-                    console.log('Raw API response:', data);
-                    return typeof data === 'string' ? JSON.parse(data) : data;
-                } catch (error) {
-                    console.error('Parsing error:', error);
-                    console.error('Unparseable response:', data);
-                    throw new Error(`Unable to parse response: ${data}`);
-                }
-            }]
+            timeout: 30000
         });
-
-        // Log full response for debugging
-        console.log('Full API response:', JSON.stringify(response.data));
 
         // Validate response structure
         if (!response.data || !response.data.choices || !response.data.choices[0]) {
-            throw new Error('Unexpected API response format: ' + JSON.stringify(response.data));
+            throw new Error('Unexpected API response format');
         }
 
         // Return the AI's response
@@ -76,26 +56,18 @@ export default async function handler(req, res) {
         });
 
     } catch (error) {
-        // Log full error details
-        console.error('Full error object:', error);
-
-        // Log specific error message and any response data
-        if (error.response) {
-            console.error('Response error data:', error.response.data);
-            console.error('Response error status:', error.response.status);
-            console.error('Response error headers:', error.response.headers);
-        }
+        // Log error details
+        console.error('Chat API Error:', error);
 
         // Detailed error response
         if (error.response) {
             // The request was made and the server responded with a status code
+            console.error('Response error data:', error.response.data);
+            console.error('Response error status:', error.response.status);
+
             res.status(error.response.status).json({
                 error: 'AI API Error',
-                details: error.response.data ? 
-                    (typeof error.response.data === 'object' 
-                        ? JSON.stringify(error.response.data) 
-                        : error.response.data.toString()) 
-                    : 'Unknown error'
+                details: error.response.data ? JSON.stringify(error.response.data) : 'Unknown error'
             });
         } else if (error.request) {
             // The request was made but no response was received
