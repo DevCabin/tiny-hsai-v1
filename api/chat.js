@@ -28,6 +28,10 @@ export default async function handler(req, res) {
             return;
         }
 
+        // Get API base URL from environment variable
+        const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:1234';
+        console.log('Using API Base URL:', API_BASE_URL);
+
         // Extract message from request
         const { message } = req.body;
 
@@ -36,7 +40,7 @@ export default async function handler(req, res) {
             return;
         }
 
-        // Prepare request to local AI API via Cloudflare tunnel
+        // Prepare request to local AI API
         const aiRequest = {
             messages: [
                 { role: 'system', content: 'You are a helpful AI assistant.' },
@@ -49,7 +53,7 @@ export default async function handler(req, res) {
 
         // Custom axios instance with interceptors
         const instance = axios.create({
-            baseURL: 'https://api.devcabin.com',
+            baseURL: API_BASE_URL,
             timeout: 30000,
             headers: { 'Content-Type': 'application/json' }
         });
@@ -83,7 +87,7 @@ export default async function handler(req, res) {
             }
         );
 
-        // Send request to Cloudflare-exposed AI server
+        // Send request to local AI server
         const response = await instance.post('/v1/chat/completions', aiRequest);
 
         // Validate response structure with extensive logging
