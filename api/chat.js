@@ -1,42 +1,79 @@
 import axios from 'axios';
 
 export default async function handler(req, res) {
-    // Global error logging function
+    // Global error logging function with enhanced details
     const logError = (message, details = {}) => {
-        console.error(JSON.stringify({
+        const errorLog = {
             timestamp: new Date().toISOString(),
             message,
+            requestMethod: req.method,
+            requestBody: req.body,
+            requestHeaders: req.headers,
             ...details
-        }));
+        };
+        console.error(JSON.stringify(errorLog));
     };
 
+    // Catch-all error handler with comprehensive logging
     try {
-        // Extensive request logging
-        logError('Incoming Request', {
+        logError('API Route Accessed', {
             method: req.method,
             body: req.body,
             headers: req.headers
         });
 
-        // CORS headers
-        res.setHeader('Access-Control-Allow-Credentials', true);
+        // CORS headers with more permissive settings
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
         res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+        res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
+        res.setHeader(
+            'Access-Control-Allow-Headers', 
+            'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
+        );
 
-        // Handle OPTIONS request
+        // Handle preflight requests
         if (req.method === 'OPTIONS') {
             res.status(200).end();
             return;
         }
 
-        // Only allow POST
+        // Validate request method
         if (req.method !== 'POST') {
-            res.status(405).json({ error: 'Method Not Allowed' });
+            logError('Invalid Request Method', { 
+                allowedMethods: ['POST'], 
+                receivedMethod: req.method 
+            });
+            res.status(405).json({ 
+                error: 'Method Not Allowed', 
+                allowedMethods: ['POST'] 
+            });
             return;
         }
 
-        // Potential API base URLs to try
+        // Validate request body
+        if (!req.body || Object.keys(req.body).length === 0) {
+            logError('Empty Request Body');
+            res.status(400).json({ 
+                error: 'Bad Request', 
+                details: 'Request body is empty' 
+            });
+            return;
+        }
+
+        // Extract message from request with robust parsing
+        const message = req.body.message || 
+            (typeof req.body === 'string' ? req.body : JSON.stringify(req.body));
+
+        if (!message) {
+            logError('No Message Provided', { requestBody: req.body });
+            res.status(400).json({ 
+                error: 'No message provided', 
+                details: 'Message is required in the request body' 
+            });
+            return;
+        }
+
+        // Potential API base URLs with explicit ngrok URL
         const POTENTIAL_URLS = [
             process.env.API_BASE_URL,  // User-defined URL
             'https://c83e2baa5243.ngrok-free.app',  // Explicit ngrok URL
@@ -45,13 +82,7 @@ export default async function handler(req, res) {
             'http://host.docker.internal:1234'  // Docker host networking
         ].filter(Boolean);  // Remove any undefined values
 
-        // Extract message from request
-        const { message } = req.body;
-
-        if (!message) {
-            res.status(400).json({ error: 'No message provided' });
-            return;
-        }
+        logError('Potential API URLs', { urls: POTENTIAL_URLS });
 
         // Prepare request to local AI API
         const aiRequest = {
@@ -63,20 +94,18 @@ export default async function handler(req, res) {
         };
 
         logError('Prepared AI Request', { request: aiRequest });
-        logError('Attempting URLs', { urls: POTENTIAL_URLS });
 
         // Try each potential URL
         let lastError = null;
         for (const baseURL of POTENTIAL_URLS) {
             try {
-                logError(`Trying URL: ${baseURL}`);
+                logError(`Attempting URL: ${baseURL}`);
 
                 // Custom axios instance with extreme error handling
                 const instance = axios.create({
                     baseURL,
                     timeout: 15000,  // Increased timeout
                     transformResponse: [function (data) {
-                        // Log raw response data
                         logError('Raw Response Data', { 
                             dataType: typeof data,
                             dataLength: data ? data.length : 'N/A',
@@ -86,27 +115,18 @@ export default async function handler(req, res) {
                         // Attempt to parse with extensive error handling
                         if (typeof data === 'string') {
                             try {
-                                return JSON.parse(data);
+                                // Trim and remove any leading non-JSON characters
+                                const cleanedData = data.trim()
+                                    .replace(/^[^{[]*/, '')   // Remove leading non-JSON
+                                    .replace(/[^}\]]*$/, ''); // Remove trailing non-JSON
+
+                                return JSON.parse(cleanedData);
                             } catch (parseError) {
                                 logError('JSON Parsing Error', {
                                     originalData: data,
                                     parseErrorMessage: parseError.message
                                 });
-                                
-                                // If parsing fails, try to clean or modify the data
-                                const cleanedData = data.trim()
-                                    .replace(/^[^{[]*/, '')  // Remove any leading non-JSON characters
-                                    .replace(/[^}\]]*$/, '');  // Remove any trailing non-JSON characters
-                                
-                                try {
-                                    return JSON.parse(cleanedData);
-                                } catch (secondParseError) {
-                                    logError('Cleaned Data Parsing Error', {
-                                        cleanedData,
-                                        parseErrorMessage: secondParseError.message
-                                    });
-                                    throw parseError;
-                                }
+                                throw parseError;
                             }
                         }
                         return data;
@@ -160,10 +180,11 @@ export default async function handler(req, res) {
         throw lastError || new Error('Could not connect to any AI server');
 
     } catch (error) {
-        // Comprehensive error logging
-        logError('Unhandled Error', {
+        // Final catch-all error handling
+        logError('Unhandled Error in API Route', {
             errorMessage: error.message,
-            errorStack: error.stack
+            errorStack: error.stack,
+            requestBody: req.body
         });
 
         // Attempt to extract meaningful error information
