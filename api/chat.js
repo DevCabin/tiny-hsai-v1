@@ -28,9 +28,13 @@ export default async function handler(req, res) {
             return;
         }
 
-        // Get API base URL from environment variable
-        const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:1234';
-        console.log('Using API Base URL:', API_BASE_URL);
+        // Potential API base URLs to try
+        const POTENTIAL_URLS = [
+            process.env.API_BASE_URL,  // User-defined URL
+            'http://localhost:1234',   // Default LM Studio
+            'http://127.0.0.1:1234',   // Alternate localhost
+            'http://host.docker.internal:1234'  // Docker host networking
+        ].filter(Boolean);  // Remove any undefined values
 
         // Extract message from request
         const { message } = req.body;
@@ -50,61 +54,49 @@ export default async function handler(req, res) {
         };
 
         console.log('Prepared AI Request:', JSON.stringify(aiRequest));
+        console.log('Attempting URLs:', POTENTIAL_URLS);
 
-        // Custom axios instance with interceptors
-        const instance = axios.create({
-            baseURL: API_BASE_URL,
-            timeout: 30000,
-            headers: { 'Content-Type': 'application/json' }
-        });
+        // Try each potential URL
+        let lastError = null;
+        for (const baseURL of POTENTIAL_URLS) {
+            try {
+                console.log(`Trying URL: ${baseURL}`);
 
-        // Request interceptor
-        instance.interceptors.request.use(config => {
-            console.log('Axios Request Config:', JSON.stringify(config));
-            return config;
-        }, error => {
-            console.error('Axios Request Error:', error);
-            return Promise.reject(error);
-        });
+                // Custom axios instance with interceptors
+                const instance = axios.create({
+                    baseURL,
+                    timeout: 10000,  // Reduced timeout for faster failover
+                    headers: { 'Content-Type': 'application/json' }
+                });
 
-        // Response interceptor
-        instance.interceptors.response.use(
-            response => {
-                console.log('Axios Raw Response:', JSON.stringify(response.data));
-                return response;
-            },
-            error => {
-                console.error('Axios Response Error:', error);
-                
-                // Log detailed error information
-                if (error.response) {
-                    console.error('Error Response Data:', error.response.data);
-                    console.error('Error Response Status:', error.response.status);
-                    console.error('Error Response Headers:', error.response.headers);
+                // Send request to local AI server
+                const response = await instance.post('/v1/chat/completions', aiRequest);
+
+                // Validate response structure
+                if (!response.data) {
+                    console.error('No data in response from', baseURL);
+                    continue;
                 }
 
-                return Promise.reject(error);
+                if (!response.data.choices || !response.data.choices[0]) {
+                    console.error('Invalid response structure from', baseURL);
+                    continue;
+                }
+
+                // Return the AI's response
+                res.status(200).json({
+                    message: response.data.choices[0].message.content
+                });
+
+                return;  // Successfully sent response, exit function
+            } catch (error) {
+                console.error(`Error with URL ${baseURL}:`, error.message);
+                lastError = error;
             }
-        );
-
-        // Send request to local AI server
-        const response = await instance.post('/v1/chat/completions', aiRequest);
-
-        // Validate response structure with extensive logging
-        if (!response.data) {
-            console.error('No data in response');
-            throw new Error('No data received from AI server');
         }
 
-        if (!response.data.choices || !response.data.choices[0]) {
-            console.error('Invalid response structure:', JSON.stringify(response.data));
-            throw new Error('Unexpected API response format');
-        }
-
-        // Return the AI's response
-        res.status(200).json({
-            message: response.data.choices[0].message.content
-        });
+        // If no URL worked
+        throw lastError || new Error('Could not connect to any AI server');
 
     } catch (error) {
         // Comprehensive error logging
@@ -129,7 +121,7 @@ export default async function handler(req, res) {
             statusCode = error.response.status;
         } else if (error.request) {
             // Request was made but no response received
-            errorDetails = 'No response received from server';
+            errorDetails = 'No response received from server. Check server status and network.';
             statusCode = 503;
         } else {
             // Something happened in setting up the request
@@ -140,7 +132,8 @@ export default async function handler(req, res) {
         // Send error response
         res.status(statusCode).json({
             error: 'API Communication Error',
-            details: errorDetails
+            details: errorDetails,
+            potentialUrls: process.env.API_BASE_URL ? [process.env.API_BASE_URL] : []
         });
     }
 }
