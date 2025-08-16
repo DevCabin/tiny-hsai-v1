@@ -1,29 +1,33 @@
 import axios from 'axios';
 
 export default async function handler(req, res) {
-    // Enable detailed logging
-    console.log('Incoming request body:', JSON.stringify(req.body));
-    console.log('Request headers:', JSON.stringify(req.headers));
-
-    // CORS headers
-    res.setHeader('Access-Control-Allow-Credentials', true);
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-    // Handle OPTIONS request
-    if (req.method === 'OPTIONS') {
-        res.status(200).end();
-        return;
-    }
-
-    // Only allow POST
-    if (req.method !== 'POST') {
-        res.status(405).json({ error: 'Method Not Allowed' });
-        return;
-    }
-
+    // Catch-all error handler
     try {
+        // Detailed request logging
+        console.log('Full request object:', {
+            method: req.method,
+            body: req.body,
+            headers: req.headers
+        });
+
+        // CORS headers
+        res.setHeader('Access-Control-Allow-Credentials', true);
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+        // Handle OPTIONS request
+        if (req.method === 'OPTIONS') {
+            res.status(200).end();
+            return;
+        }
+
+        // Only allow POST
+        if (req.method !== 'POST') {
+            res.status(405).json({ error: 'Method Not Allowed' });
+            return;
+        }
+
         // Extract message from request
         const { message } = req.body;
 
@@ -43,36 +47,52 @@ export default async function handler(req, res) {
 
         console.log('Prepared AI Request:', JSON.stringify(aiRequest));
 
-        // Send request to Cloudflare-exposed AI server
-        const axiosConfig = {
-            headers: { 
-                'Content-Type': 'application/json'
-            },
+        // Custom axios instance with interceptors
+        const instance = axios.create({
+            baseURL: 'https://api.devcabin.com',
             timeout: 30000,
-            // Add raw response handling
-            transformResponse: [function (data) {
-                console.log('Raw response data:', data);
-                console.log('Response type:', typeof data);
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        // Request interceptor
+        instance.interceptors.request.use(config => {
+            console.log('Axios Request Config:', JSON.stringify(config));
+            return config;
+        }, error => {
+            console.error('Axios Request Error:', error);
+            return Promise.reject(error);
+        });
+
+        // Response interceptor
+        instance.interceptors.response.use(
+            response => {
+                console.log('Axios Raw Response:', JSON.stringify(response.data));
+                return response;
+            },
+            error => {
+                console.error('Axios Response Error:', error);
                 
-                // Attempt to parse, with extensive logging
-                try {
-                    const parsed = typeof data === 'string' ? JSON.parse(data) : data;
-                    console.log('Parsed response:', JSON.stringify(parsed));
-                    return parsed;
-                } catch (error) {
-                    console.error('Parsing error:', error);
-                    console.error('Unparseable data:', data);
-                    throw new Error(`Unable to parse response: ${data}`);
+                // Log detailed error information
+                if (error.response) {
+                    console.error('Error Response Data:', error.response.data);
+                    console.error('Error Response Status:', error.response.status);
+                    console.error('Error Response Headers:', error.response.headers);
                 }
-            }]
-        };
 
-        const response = await axios.post('https://api.devcabin.com/v1/chat/completions', aiRequest, axiosConfig);
+                return Promise.reject(error);
+            }
+        );
 
-        console.log('Full response data:', JSON.stringify(response.data));
+        // Send request to Cloudflare-exposed AI server
+        const response = await instance.post('/v1/chat/completions', aiRequest);
 
-        // Validate response structure
-        if (!response.data || !response.data.choices || !response.data.choices[0]) {
+        // Validate response structure with extensive logging
+        if (!response.data) {
+            console.error('No data in response');
+            throw new Error('No data received from AI server');
+        }
+
+        if (!response.data.choices || !response.data.choices[0]) {
             console.error('Invalid response structure:', JSON.stringify(response.data));
             throw new Error('Unexpected API response format');
         }
@@ -83,31 +103,40 @@ export default async function handler(req, res) {
         });
 
     } catch (error) {
-        // Extensive error logging
-        console.error('Full error object:', error);
+        // Comprehensive error logging
+        console.error('Unhandled Error:', error);
+
+        // Attempt to extract meaningful error information
+        let errorDetails = 'Unknown error occurred';
+        let statusCode = 500;
 
         if (error.response) {
-            console.error('Response error data:', error.response.data);
-            console.error('Response error status:', error.response.status);
-            console.error('Response error headers:', error.response.headers);
-        }
-
-        // Detailed error response
-        if (error.response) {
-            res.status(error.response.status).json({
-                error: 'AI API Error',
-                details: error.response.data ? JSON.stringify(error.response.data) : 'Unknown error'
-            });
+            // Server responded with an error
+            console.error('Response Error Data:', error.response.data);
+            console.error('Response Error Status:', error.response.status);
+            
+            // Try to parse error response
+            try {
+                errorDetails = JSON.stringify(error.response.data);
+            } catch {
+                errorDetails = error.response.data.toString();
+            }
+            
+            statusCode = error.response.status;
         } else if (error.request) {
-            res.status(503).json({
-                error: 'No response from AI server',
-                details: 'The AI server might be down or unreachable'
-            });
+            // Request was made but no response received
+            errorDetails = 'No response received from server';
+            statusCode = 503;
         } else {
-            res.status(500).json({
-                error: 'Internal server error',
-                details: error.message
-            });
+            // Something happened in setting up the request
+            errorDetails = error.message;
+            statusCode = 500;
         }
+
+        // Send error response
+        res.status(statusCode).json({
+            error: 'API Communication Error',
+            details: errorDetails
+        });
     }
 }
